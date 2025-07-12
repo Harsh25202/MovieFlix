@@ -1,3 +1,4 @@
+export const runtime = "edge";
 import { isAuthenticated } from "@/lib/auth-server"
 import { Card, CardContent, CardDescription, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"

@@ -1,3 +1,4 @@
+export const runtime = "edge";
 import { DatabaseService } from "@/lib/database"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { MapPin } from "lucide-react"

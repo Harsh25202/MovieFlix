@@ -1,3 +1,4 @@
+export const runtime = "edge";
 import { Suspense } from "react"
 import { DatabaseService } from "@/lib/database"
 import { SearchBar } from "@/components/molecules/search-bar"

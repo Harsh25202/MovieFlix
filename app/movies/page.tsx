@@ -1,3 +1,4 @@
+export const runtime = "edge";
 import { DatabaseService } from "@/lib/database"
 import { MovieGrid } from "@/components/organisms/movie-grid"
 import { isAuthenticated, getServerUser } from "@/lib/auth-server"

@@ -1,3 +1,4 @@
+export const runtime = "edge";
 import { DatabaseService } from "@/lib/database"
 import { getDatabase } from "@/lib/mongodb"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"

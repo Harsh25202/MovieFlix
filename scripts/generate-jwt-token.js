@@ -1,25 +1,19 @@
-// Script to generate JWT tokens for testing purposes
+// JWT Token Generator Script for MovieFlix
+// Run with: node scripts/generate-jwt-token.js
+
 const crypto = require("crypto")
 
-// Base64 URL encode
-function base64UrlEncode(data) {
-  return Buffer.from(data).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "")
+// Simple JWT implementation for Node.js (for script use only)
+function base64urlEncode(str) {
+  return Buffer.from(str).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "")
 }
 
-// Create HMAC signature
-function createSignature(data, secret) {
-  return crypto.createHmac("sha256", secret).update(data).digest()
-}
-
-// Generate JWT token
-function generateJWT(payload, secret) {
-  // Create header
+function createJWT(payload, secret) {
   const header = {
     alg: "HS256",
     typ: "JWT",
   }
 
-  // Add timestamps to payload
   const now = Math.floor(Date.now() / 1000)
   const fullPayload = {
     ...payload,
@@ -27,64 +21,42 @@ function generateJWT(payload, secret) {
     exp: now + 7 * 24 * 60 * 60, // 7 days
   }
 
-  // Encode header and payload
-  const encodedHeader = base64UrlEncode(JSON.stringify(header))
-  const encodedPayload = base64UrlEncode(JSON.stringify(fullPayload))
+  const encodedHeader = base64urlEncode(JSON.stringify(header))
+  const encodedPayload = base64urlEncode(JSON.stringify(fullPayload))
 
-  // Create signature
   const data = `${encodedHeader}.${encodedPayload}`
-  const signature = createSignature(data, secret)
-  const encodedSignature = base64UrlEncode(signature)
+  const signature = crypto
+    .createHmac("sha256", secret)
+    .update(data)
+    .digest("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=/g, "")
 
-  return `${data}.${encodedSignature}`
+  return `${data}.${signature}`
 }
 
-// Verify JWT token
-function verifyJWT(token, secret) {
-  try {
-    const parts = token.split(".")
-    if (parts.length !== 3) {
-      return { valid: false, error: "Invalid token format" }
-    }
-
-    const [encodedHeader, encodedPayload, encodedSignature] = parts
-
-    // Verify signature
-    const data = `${encodedHeader}.${encodedPayload}`
-    const expectedSignature = createSignature(data, secret)
-    const expectedEncodedSignature = base64UrlEncode(expectedSignature)
-
-    if (encodedSignature !== expectedEncodedSignature) {
-      return { valid: false, error: "Invalid signature" }
-    }
-
-    // Decode payload
-    const payload = JSON.parse(Buffer.from(encodedPayload, "base64url").toString())
-
-    // Check expiration
-    const now = Math.floor(Date.now() / 1000)
-    if (payload.exp < now) {
-      return { valid: false, error: "Token expired" }
-    }
-
-    return { valid: true, payload }
-  } catch (error) {
-    return { valid: false, error: error.message }
-  }
+function generateJWTSecret() {
+  return crypto.randomBytes(32).toString("hex")
 }
 
 // Main function
 function main() {
-  console.log("🔐 JWT Token Generator\n")
+  console.log("🔐 JWT Token Generator for MovieFlix\n")
 
-  // Get JWT secret from environment or use default
-  const jwtSecret = process.env.JWT_SECRET || "default-secret-key-change-in-production"
-
-  if (!process.env.JWT_SECRET) {
-    console.log("⚠️  Warning: Using default JWT_SECRET. Set JWT_SECRET environment variable for production.\n")
+  // Check for JWT_SECRET
+  let jwtSecret = process.env.JWT_SECRET
+  if (!jwtSecret) {
+    console.log("⚠️  JWT_SECRET not found in environment variables")
+    jwtSecret = generateJWTSecret()
+    console.log(`🔑 Generated JWT_SECRET: ${jwtSecret}`)
+    console.log("💡 Add this to your .env.local file:\n")
+    console.log(`JWT_SECRET=${jwtSecret}\n`)
+  } else {
+    console.log("✅ Using JWT_SECRET from environment variables\n")
   }
 
-  // Sample user data
+  // Sample users
   const sampleUsers = [
     {
       userId: "user_123",
@@ -97,62 +69,31 @@ function main() {
       email: "jane@example.com",
     },
     {
-      userId: "admin_789",
-      name: "Admin User",
-      email: "admin@example.com",
+      userId: "user_789",
+      name: "Movie Lover",
+      email: "movie@example.com",
     },
   ]
 
   console.log("📋 Generated JWT Tokens:\n")
 
   sampleUsers.forEach((user, index) => {
-    const token = generateJWT(user, jwtSecret)
+    const token = createJWT(user, jwtSecret)
+    const expiryDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
 
     console.log(`${index + 1}. User: ${user.name} (${user.email})`)
     console.log(`   Token: ${token}`)
     console.log(`   Length: ${token.length} characters`)
-
-    // Verify the token
-    const verification = verifyJWT(token, jwtSecret)
-    console.log(`   Valid: ${verification.valid ? "✅" : "❌"}`)
-
-    if (verification.valid) {
-      console.log(`   Expires: ${new Date(verification.payload.exp * 1000).toLocaleString()}`)
-    } else {
-      console.log(`   Error: ${verification.error}`)
-    }
+    console.log(`   Expires: ${expiryDate.toLocaleString()}`)
     console.log("")
   })
 
-  // Custom token generation
-  console.log("🛠️  Custom Token Generation:")
-  console.log("You can also generate tokens for specific users by modifying this script.")
-  console.log("Example usage in your API routes:")
-  console.log(`
-const { signJWT } = require('./lib/jwt')
-
-// In your login/signup route:
-const token = await signJWT({
-  userId: user._id,
-  name: user.name,
-  email: user.email
-})
-`)
-
-  // Show how to use in curl commands
-  console.log("\n🌐 Test with curl commands:")
-  const testToken = generateJWT(sampleUsers[0], jwtSecret)
-  console.log(`
-# Test authenticated endpoint:
-curl -H "Cookie: auth-token=${testToken}" \\
-     http://localhost:3000/api/auth/me
-
-# Or set as Authorization header:
-curl -H "Authorization: Bearer ${testToken}" \\
-     http://localhost:3000/api/watchlist
-`)
-
-  console.log("\n✨ Token generation complete!")
+  console.log("🌐 Test with curl commands:")
+  console.log('curl -H "Cookie: auth-token=YOUR_TOKEN_HERE" \\')
+  console.log("     http://localhost:3000/api/auth/me")
+  console.log("")
+  console.log("🔧 Or use in browser console:")
+  console.log('document.cookie = "auth-token=YOUR_TOKEN_HERE; path=/"')
 }
 
 // Run the script
@@ -160,4 +101,4 @@ if (require.main === module) {
   main()
 }
 
-module.exports = { generateJWT, verifyJWT }
+module.exports = { createJWT, generateJWTSecret }

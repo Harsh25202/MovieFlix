@@ -1,8 +1,5 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  experimental: {
-    serverComponentsExternalPackages: ['mongodb'],
-  },
   eslint: {
     ignoreDuringBuilds: true,
   },
@@ -13,16 +10,18 @@ const nextConfig = {
     domains: ['image.tmdb.org', 'via.placeholder.com'],
     unoptimized: true,
   },
-  // Ensure Edge Runtime compatibility
+  // Remove MongoDB-specific configurations for Edge Runtime
   webpack: (config, { isServer }) => {
-    if (isServer) {
-      // Handle MongoDB and other Node.js modules for server-side rendering
-      config.externals = config.externals || []
-      config.externals.push({
-        'mongodb': 'commonjs mongodb',
-        'bcryptjs': 'commonjs bcryptjs',
-        'jsonwebtoken': 'commonjs jsonwebtoken',
-      })
+    if (!isServer) {
+      // Exclude Node.js modules from client bundle
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false,
+        net: false,
+        dns: false,
+        child_process: false,
+        tls: false,
+      }
     }
     return config
   },

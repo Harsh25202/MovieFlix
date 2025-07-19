@@ -1,5 +1,7 @@
-// Interactive JWT testing script
-const { generateJWT, verifyJWT } = require("./generate-jwt-token")
+// Interactive JWT Testing Script
+// Run with: node scripts/test-jwt.js
+
+const crypto = require("crypto")
 const readline = require("readline")
 
 const rl = readline.createInterface({
@@ -7,112 +9,199 @@ const rl = readline.createInterface({
   output: process.stdout,
 })
 
-function askQuestion(question) {
-  return new Promise((resolve) => {
-    rl.question(question, resolve)
+// JWT utilities
+function base64urlEncode(str) {
+  return Buffer.from(str).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "")
+}
+
+function base64urlDecode(str) {
+  str += "=".repeat((4 - (str.length % 4)) % 4)
+  str = str.replace(/-/g, "+").replace(/_/g, "/")
+  return Buffer.from(str, "base64").toString()
+}
+
+function createJWT(payload, secret) {
+  const header = { alg: "HS256", typ: "JWT" }
+  const now = Math.floor(Date.now() / 1000)
+  const fullPayload = { ...payload, iat: now, exp: now + 7 * 24 * 60 * 60 }
+
+  const encodedHeader = base64urlEncode(JSON.stringify(header))
+  const encodedPayload = base64urlEncode(JSON.stringify(fullPayload))
+  const data = `${encodedHeader}.${encodedPayload}`
+
+  const signature = crypto
+    .createHmac("sha256", secret)
+    .update(data)
+    .digest("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=/g, "")
+
+  return `${data}.${signature}`
+}
+
+function verifyJWT(token, secret) {
+  try {
+    const parts = token.split(".")
+    if (parts.length !== 3) return null
+
+    const [encodedHeader, encodedPayload, encodedSignature] = parts
+    const data = `${encodedHeader}.${encodedPayload}`
+
+    const expectedSignature = crypto
+      .createHmac("sha256", secret)
+      .update(data)
+      .digest("base64")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=/g, "")
+
+    if (expectedSignature !== encodedSignature) return null
+
+    const payload = JSON.parse(base64urlDecode(encodedPayload))
+    if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) return null
+
+    return payload
+  } catch (error) {
+    return null
+  }
+}
+
+function decodeJWT(token) {
+  try {
+    const parts = token.split(".")
+    if (parts.length !== 3) return null
+
+    const header = JSON.parse(base64urlDecode(parts[0]))
+    const payload = JSON.parse(base64urlDecode(parts[1]))
+
+    return { header, payload }
+  } catch (error) {
+    return null
+  }
+}
+
+// Interactive menu
+function showMenu() {
+  console.log("\n🔐 JWT Testing Menu:")
+  console.log("1. Generate JWT Token")
+  console.log("2. Verify JWT Token")
+  console.log("3. Decode JWT Token (without verification)")
+  console.log("4. Generate JWT Secret")
+  console.log("5. Exit")
+  console.log("")
+}
+
+function generateToken() {
+  rl.question("Enter user ID: ", (userId) => {
+    rl.question("Enter name: ", (name) => {
+      rl.question("Enter email: ", (email) => {
+        const secret = process.env.JWT_SECRET || crypto.randomBytes(32).toString("hex")
+        const token = createJWT({ userId, name, email }, secret)
+
+        console.log("\n✅ Generated JWT Token:")
+        console.log(`Token: ${token}`)
+        console.log(`Length: ${token.length} characters`)
+        console.log(`Secret used: ${secret}`)
+
+        showMenu()
+        handleChoice()
+      })
+    })
   })
 }
 
-async function main() {
-  console.log("🧪 Interactive JWT Token Tester\n")
+function verifyToken() {
+  rl.question("Enter JWT token: ", (token) => {
+    rl.question("Enter JWT secret (or press Enter to use env): ", (secret) => {
+      const jwtSecret = secret || process.env.JWT_SECRET || "default-secret"
+      const payload = verifyJWT(token, jwtSecret)
 
-  const jwtSecret = process.env.JWT_SECRET || "default-secret-key-change-in-production"
+      if (payload) {
+        console.log("\n✅ Token is valid!")
+        console.log("Payload:", JSON.stringify(payload, null, 2))
+        console.log(`Expires: ${new Date(payload.exp * 1000).toLocaleString()}`)
+      } else {
+        console.log("\n❌ Token is invalid or expired")
+      }
 
-  if (!process.env.JWT_SECRET) {
-    console.log("⚠️  Warning: Using default JWT_SECRET. Set JWT_SECRET environment variable.\n")
-  }
+      showMenu()
+      handleChoice()
+    })
+  })
+}
 
-  while (true) {
-    console.log("\nChoose an option:")
-    console.log("1. Generate new JWT token")
-    console.log("2. Verify existing JWT token")
-    console.log("3. Exit")
+function decodeToken() {
+  rl.question("Enter JWT token: ", (token) => {
+    const decoded = decodeJWT(token)
 
-    const choice = await askQuestion("\nEnter your choice (1-3): ")
+    if (decoded) {
+      console.log("\n📋 Decoded JWT Token:")
+      console.log("Header:", JSON.stringify(decoded.header, null, 2))
+      console.log("Payload:", JSON.stringify(decoded.payload, null, 2))
 
+      if (decoded.payload.exp) {
+        const isExpired = decoded.payload.exp < Math.floor(Date.now() / 1000)
+        console.log(`Status: ${isExpired ? "❌ Expired" : "✅ Valid"}`)
+        console.log(`Expires: ${new Date(decoded.payload.exp * 1000).toLocaleString()}`)
+      }
+    } else {
+      console.log("\n❌ Invalid JWT token format")
+    }
+
+    showMenu()
+    handleChoice()
+  })
+}
+
+function generateSecret() {
+  const secret = crypto.randomBytes(32).toString("hex")
+  console.log("\n🔑 Generated JWT Secret:")
+  console.log(secret)
+  console.log("\n💡 Add this to your .env.local file:")
+  console.log(`JWT_SECRET=${secret}`)
+
+  showMenu()
+  handleChoice()
+}
+
+function handleChoice() {
+  rl.question("Choose an option (1-5): ", (choice) => {
     switch (choice) {
       case "1":
-        await generateNewToken(jwtSecret)
+        generateToken()
         break
       case "2":
-        await verifyExistingToken(jwtSecret)
+        verifyToken()
         break
       case "3":
+        decodeToken()
+        break
+      case "4":
+        generateSecret()
+        break
+      case "5":
         console.log("👋 Goodbye!")
         rl.close()
-        return
+        break
       default:
-        console.log("❌ Invalid choice. Please enter 1, 2, or 3.")
+        console.log("❌ Invalid choice. Please try again.")
+        showMenu()
+        handleChoice()
+        break
     }
-  }
+  })
 }
 
-async function generateNewToken(secret) {
-  console.log("\n📝 Enter user details:")
+// Start the interactive session
+console.log("🎬 MovieFlix JWT Testing Tool")
+console.log("=============================")
 
-  const userId = await askQuestion("User ID: ")
-  const name = await askQuestion("Name: ")
-  const email = await askQuestion("Email: ")
-
-  if (!userId || !name || !email) {
-    console.log("❌ All fields are required!")
-    return
-  }
-
-  const payload = { userId, name, email }
-  const token = generateJWT(payload, secret)
-
-  console.log("\n✅ JWT Token Generated:")
-  console.log(`Token: ${token}`)
-  console.log(`Length: ${token.length} characters`)
-
-  // Show decoded payload
-  const verification = verifyJWT(token, secret)
-  if (verification.valid) {
-    console.log("\n📋 Token Payload:")
-    console.log(JSON.stringify(verification.payload, null, 2))
-    console.log(`\n⏰ Expires: ${new Date(verification.payload.exp * 1000).toLocaleString()}`)
-  }
+if (process.env.JWT_SECRET) {
+  console.log("✅ JWT_SECRET found in environment")
+} else {
+  console.log("⚠️  JWT_SECRET not found in environment")
 }
 
-async function verifyExistingToken(secret) {
-  console.log("\n🔍 Token Verification:")
-
-  const token = await askQuestion("Enter JWT token to verify: ")
-
-  if (!token) {
-    console.log("❌ Token is required!")
-    return
-  }
-
-  const verification = verifyJWT(token, secret)
-
-  if (verification.valid) {
-    console.log("\n✅ Token is VALID")
-    console.log("\n📋 Decoded Payload:")
-    console.log(JSON.stringify(verification.payload, null, 2))
-    console.log(`\n⏰ Expires: ${new Date(verification.payload.exp * 1000).toLocaleString()}`)
-
-    // Check if token is about to expire
-    const now = Math.floor(Date.now() / 1000)
-    const timeLeft = verification.payload.exp - now
-    const hoursLeft = Math.floor(timeLeft / 3600)
-    const daysLeft = Math.floor(hoursLeft / 24)
-
-    if (daysLeft > 1) {
-      console.log(`⏳ Token expires in ${daysLeft} days`)
-    } else if (hoursLeft > 1) {
-      console.log(`⏳ Token expires in ${hoursLeft} hours`)
-    } else {
-      console.log("⚠️  Token expires soon!")
-    }
-  } else {
-    console.log("\n❌ Token is INVALID")
-    console.log(`Error: ${verification.error}`)
-  }
-}
-
-// Run the script
-if (require.main === module) {
-  main().catch(console.error)
-}
+showMenu()
+handleChoice()

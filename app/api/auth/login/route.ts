@@ -3,8 +3,6 @@ import { DatabaseService } from "@/lib/database"
 import { verifyPassword } from "@/lib/crypto"
 import { signJWT } from "@/lib/jwt"
 
-export const runtime = "edge"
-
 export async function POST(request: NextRequest) {
   try {
     const { email, password } = await request.json()

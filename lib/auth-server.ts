@@ -8,7 +8,7 @@ export interface AuthUser {
   email: string
 }
 
-export async function getAuthUser(): Promise<AuthUser | null> {
+export async function getServerUser(): Promise<AuthUser | null> {
   try {
     const cookieStore = await cookies()
     const token = cookieStore.get("auth-token")?.value
@@ -39,8 +39,13 @@ export async function getAuthUser(): Promise<AuthUser | null> {
   }
 }
 
+export async function isAuthenticated(): Promise<boolean> {
+  const user = await getServerUser()
+  return user !== null
+}
+
 export async function requireAuth(): Promise<AuthUser> {
-  const user = await getAuthUser()
+  const user = await getServerUser()
   if (!user) {
     throw new Error("Authentication required")
   }

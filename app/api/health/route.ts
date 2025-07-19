@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server"
 import { DatabaseService } from "@/lib/database"
 
-export const runtime = "edge"
-
 export async function GET() {
   let databaseStatus = "disconnected"
   let error = null

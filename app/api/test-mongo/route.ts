@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server"
 import { getDatabase } from "@/lib/mongodb"
 
-export const runtime = "edge"
-
 export async function GET() {
   try {
     console.log("🔍 Testing MongoDB connection...")

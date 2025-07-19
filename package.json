@@ -46,7 +46,6 @@
     "crypto": "latest",
     "date-fns": "4.1.0",
     "dotenv": "latest",
-    "edge-runtime": "^4.0.1",
     "embla-carousel-react": "latest",
     "fs": "latest",
     "gcp-metadata": "latest",

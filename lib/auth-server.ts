@@ -1,16 +1,14 @@
 import { cookies } from "next/headers"
 import { verifyJWT } from "./jwt"
+import { DatabaseService } from "./database"
 
 export interface AuthUser {
-  userId: string
+  id: string
   name: string
   email: string
 }
 
-/**
- * Get the current authenticated user from cookies
- */
-export async function getServerUser(): Promise<AuthUser | null> {
+export async function getAuthUser(): Promise<AuthUser | null> {
   try {
     const cookieStore = await cookies()
     const token = cookieStore.get("auth-token")?.value
@@ -24,30 +22,25 @@ export async function getServerUser(): Promise<AuthUser | null> {
       return null
     }
 
+    // Verify user still exists in database
+    const user = await DatabaseService.getUserByEmail(payload.email)
+    if (!user) {
+      return null
+    }
+
     return {
-      userId: payload.userId,
-      name: payload.name,
-      email: payload.email,
+      id: user._id,
+      name: user.name,
+      email: user.email,
     }
   } catch (error) {
-    console.error("Get current user error:", error)
+    console.error("Error getting auth user:", error)
     return null
   }
 }
 
-/**
- * Check if user is authenticated
- */
-export async function isAuthenticated(): Promise<boolean> {
-  const user = await getServerUser()
-  return user !== null
-}
-
-/**
- * Require authentication (throws if not authenticated)
- */
 export async function requireAuth(): Promise<AuthUser> {
-  const user = await getServerUser()
+  const user = await getAuthUser()
   if (!user) {
     throw new Error("Authentication required")
   }

@@ -1,6 +1,5 @@
 "use server"
 
-import { DatabaseService } from "@/lib/database"
 import { revalidatePath } from "next/cache"
 
 export async function addCommentAction(formData: FormData) {
@@ -17,20 +16,32 @@ export async function addCommentAction(formData: FormData) {
   }
 
   try {
-    const comment = await DatabaseService.addComment({
-      name,
-      email,
-      movie_id: movieId,
-      text,
-      date: new Date(),
+    // Use API route instead of direct database import
+    const response = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/api/comments`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name,
+        email,
+        movie_id: movieId,
+        text,
+      }),
     })
+
+    if (!response.ok) {
+      throw new Error("Failed to add comment")
+    }
+
+    const result = await response.json()
 
     // Revalidate the movie page to show the new comment
     revalidatePath(`/movies/${movieId}`)
 
     return {
       success: true,
-      comment,
+      comment: result.comment,
     }
   } catch (error) {
     console.error("Failed to add comment:", error)

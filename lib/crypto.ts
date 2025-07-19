@@ -10,7 +10,7 @@ export async function hashPassword(password: string): Promise<string> {
   // Import the password as a key
   const key = await crypto.subtle.importKey("raw", data, { name: "PBKDF2" }, false, ["deriveBits"])
 
-  // Derive the hash using PBKDF2
+  // Derive the hash
   const hashBuffer = await crypto.subtle.deriveBits(
     {
       name: "PBKDF2",
@@ -51,7 +51,7 @@ export async function verifyPassword(password: string, hashedPassword: string): 
     // Import the password as a key
     const key = await crypto.subtle.importKey("raw", data, { name: "PBKDF2" }, false, ["deriveBits"])
 
-    // Derive the hash using the same parameters
+    // Derive the hash with the same salt
     const hashBuffer = await crypto.subtle.deriveBits(
       {
         name: "PBKDF2",
@@ -63,15 +63,15 @@ export async function verifyPassword(password: string, hashedPassword: string): 
       256,
     )
 
-    const computedHash = new Uint8Array(hashBuffer)
+    const hashArray = new Uint8Array(hashBuffer)
 
     // Compare hashes
-    if (computedHash.length !== storedHash.length) {
+    if (hashArray.length !== storedHash.length) {
       return false
     }
 
-    for (let i = 0; i < computedHash.length; i++) {
-      if (computedHash[i] !== storedHash[i]) {
+    for (let i = 0; i < hashArray.length; i++) {
+      if (hashArray[i] !== storedHash[i]) {
         return false
       }
     }

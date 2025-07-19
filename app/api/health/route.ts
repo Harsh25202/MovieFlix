@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server"
-import { getDatabase } from "@/lib/mongodb"
+import { DatabaseService } from "@/lib/database"
+
+export const runtime = "edge"
 
 export async function GET() {
   let databaseStatus = "disconnected"
@@ -9,22 +11,19 @@ export async function GET() {
 
   try {
     // Check database connection
-    const db = await getDatabase()
-    if (db) {
-      await db.admin().ping()
+    const stats = await DatabaseService.getCollectionStats()
+    if (stats) {
       databaseStatus = "connected"
-
-      // Get collections info
-      collections = await db.listCollections().toArray()
-      console.log(`✅ Health check: MongoDB connected with ${collections.length} collections`)
+      collections = Object.keys(stats)
+      console.log(`✅ Health check: Database connected with ${collections.length} collections`)
     } else {
       databaseStatus = "not configured"
-      console.log("⚠️ Health check: MongoDB not configured")
+      console.log("⚠️ Health check: Database not configured")
     }
   } catch (err) {
     databaseStatus = "error"
     error = err instanceof Error ? err.message : "Unknown error"
-    console.error("❌ Health check: MongoDB error:", error)
+    console.error("❌ Health check: Database error:", error)
   }
 
   const isHealthy = databaseStatus === "connected" || databaseStatus === "not configured"
@@ -35,13 +34,14 @@ export async function GET() {
     database: {
       status: databaseStatus,
       collections: collections.length,
-      collectionNames: collections.map((c) => c.name),
+      collectionNames: collections,
     },
     environment: {
       nodeEnv: process.env.NODE_ENV,
       mongoUri: mongoUri,
       dbName: process.env.MONGODB_DB_NAME || "movieflix",
     },
+    runtime: "edge",
     ...(error && { error }),
   }
 

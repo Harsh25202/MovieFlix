@@ -1,40 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  serverExternalPackages: [
-    "mongodb",
-    "@mongodb-js/saslprep",
-    "kerberos",
-    "@napi-rs/snappy-linux-x64-gnu",
-    "@napi-rs/snappy-linux-x64-musl",
-    "mongodb-client-encryption",
-  ],
-  webpack: (config, { isServer }) => {
-    if (!isServer) {
-      // Don't bundle these modules on the client side
-      config.resolve.fallback = {
-        ...config.resolve.fallback,
-        fs: false,
-        net: false,
-        dns: false,
-        child_process: false,
-        tls: false,
-        "util/types": false,
-      };
-
-      // Exclude MongoDB and related packages from client bundle
-      config.externals = [
-        ...config.externals,
-        "mongodb",
-        "mongodb-client-encryption",
-        "kerberos",
-        "@mongodb-js/saslprep",
-        "bson-ext",
-        "snappy",
-        "@napi-rs/snappy-linux-x64-gnu",
-        "@napi-rs/snappy-linux-x64-musl",
-      ];
-    }
-    return config;
+  experimental: {
+    serverComponentsExternalPackages: ['mongodb'],
   },
   eslint: {
     ignoreDuringBuilds: true,
@@ -43,39 +10,22 @@ const nextConfig = {
     ignoreBuildErrors: true,
   },
   images: {
-    domains: ["m.media-amazon.com", "localhost"],
-    remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "m.media-amazon.com",
-        port: "",
-        pathname: "/images/**",
-      },
-    ],
+    domains: ['image.tmdb.org', 'via.placeholder.com'],
     unoptimized: true,
   },
-  // Enable HTTPS in development
-  async headers() {
-    return [
-      {
-        source: "/(.*)",
-        headers: [
-          {
-            key: "X-Frame-Options",
-            value: "DENY",
-          },
-          {
-            key: "X-Content-Type-Options",
-            value: "nosniff",
-          },
-          {
-            key: "Referrer-Policy",
-            value: "origin-when-cross-origin",
-          },
-        ],
-      },
-    ];
+  // Ensure Edge Runtime compatibility
+  webpack: (config, { isServer }) => {
+    if (isServer) {
+      // Handle MongoDB and other Node.js modules for server-side rendering
+      config.externals = config.externals || []
+      config.externals.push({
+        'mongodb': 'commonjs mongodb',
+        'bcryptjs': 'commonjs bcryptjs',
+        'jsonwebtoken': 'commonjs jsonwebtoken',
+      })
+    }
+    return config
   },
-};
+}
 
-export default nextConfig;
+export default nextConfig

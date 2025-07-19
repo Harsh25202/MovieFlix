@@ -1,5 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
-import jwt from "jsonwebtoken"
+import { verifyJWT } from "@/lib/jwt"
+
+export const runtime = "edge"
 
 export async function GET(request: NextRequest) {
   try {
@@ -9,7 +11,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET!) as any
+    const decoded = await verifyJWT(token)
+    if (!decoded) {
+      return NextResponse.json({ error: "Invalid token" }, { status: 401 })
+    }
 
     return NextResponse.json({
       user: {

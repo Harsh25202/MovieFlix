@@ -1,15 +1,13 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  experimental: {
-    serverComponentsExternalPackages: [
-      'mongodb',
-      '@mongodb-js/saslprep',
-      'kerberos',
-      '@napi-rs/snappy-linux-x64-gnu',
-      '@napi-rs/snappy-linux-x64-musl',
-      'mongodb-client-encryption'
-    ]
-  },
+  serverExternalPackages: [
+    "mongodb",
+    "@mongodb-js/saslprep",
+    "kerberos",
+    "@napi-rs/snappy-linux-x64-gnu",
+    "@napi-rs/snappy-linux-x64-musl",
+    "mongodb-client-encryption",
+  ],
   webpack: (config, { isServer }) => {
     if (!isServer) {
       // Don't bundle these modules on the client side
@@ -20,23 +18,23 @@ const nextConfig = {
         dns: false,
         child_process: false,
         tls: false,
-        'util/types': false,
-      }
-      
+        "util/types": false,
+      };
+
       // Exclude MongoDB and related packages from client bundle
       config.externals = [
         ...config.externals,
-        'mongodb',
-        'mongodb-client-encryption',
-        'kerberos',
-        '@mongodb-js/saslprep',
-        'bson-ext',
-        'snappy',
-        '@napi-rs/snappy-linux-x64-gnu',
-        '@napi-rs/snappy-linux-x64-musl'
-      ]
+        "mongodb",
+        "mongodb-client-encryption",
+        "kerberos",
+        "@mongodb-js/saslprep",
+        "bson-ext",
+        "snappy",
+        "@napi-rs/snappy-linux-x64-gnu",
+        "@napi-rs/snappy-linux-x64-musl",
+      ];
     }
-    return config
+    return config;
   },
   eslint: {
     ignoreDuringBuilds: true,
@@ -45,13 +43,13 @@ const nextConfig = {
     ignoreBuildErrors: true,
   },
   images: {
-    domains: ['m.media-amazon.com', 'localhost'],
+    domains: ["m.media-amazon.com", "localhost"],
     remotePatterns: [
       {
-        protocol: 'https',
-        hostname: 'm.media-amazon.com',
-        port: '',
-        pathname: '/images/**',
+        protocol: "https",
+        hostname: "m.media-amazon.com",
+        port: "",
+        pathname: "/images/**",
       },
     ],
     unoptimized: true,
@@ -60,24 +58,24 @@ const nextConfig = {
   async headers() {
     return [
       {
-        source: '/(.*)',
+        source: "/(.*)",
         headers: [
           {
-            key: 'X-Frame-Options',
-            value: 'DENY',
+            key: "X-Frame-Options",
+            value: "DENY",
           },
           {
-            key: 'X-Content-Type-Options',
-            value: 'nosniff',
+            key: "X-Content-Type-Options",
+            value: "nosniff",
           },
           {
-            key: 'Referrer-Policy',
-            value: 'origin-when-cross-origin',
+            key: "Referrer-Policy",
+            value: "origin-when-cross-origin",
           },
         ],
       },
-    ]
+    ];
   },
-}
+};
 
-export default nextConfig
+export default nextConfig;

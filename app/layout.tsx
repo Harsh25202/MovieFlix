@@ -7,6 +7,8 @@ import { AuthProvider } from "@/lib/auth-context"
 
 const inter = Inter({ subsets: ["latin"] })
 
+export const runtime = 'edge';
+
 export const metadata: Metadata = {
   title: "MovieFlix - Stream Movies Online",
   description: "Discover and stream your favorite movies with MovieFlix",

@@ -1,42 +1,83 @@
-import { dummyMovies, dummyUsers, dummyComments, dummyWatchlist } from "./dummy-data"
+import { ObjectId } from "mongodb"
 
+// Only import MongoDB in Node.js runtime
+let getDatabase: any = null
+let dummyMovies: any = []
+let dummyComments: any = []
+let dummyTheaters: any = []
+let dummyUsers: any = []
+
+function isEdgeRuntime() {
+  return (
+    process.env.VERCEL_ENV === "production" ||
+    process.env.CF_PAGES === "1" ||
+    typeof window !== "undefined" ||
+    !process.env.MONGODB_URI
+  )
+}
+
+// Conditional imports based on runtime
+if (!isEdgeRuntime) {
+  // Node.js runtime - import MongoDB
+  try {
+    const mongoModule = require("./mongodb")
+    getDatabase = mongoModule.getDatabase
+
+    const dummyModule = require("./dummy-data")
+    dummyMovies = dummyModule.dummyMovies
+    dummyComments = dummyModule.dummyComments
+    dummyTheaters = dummyModule.dummyTheaters
+    dummyUsers = dummyModule.dummyUsers
+  } catch (error) {
+    console.log("📝 MongoDB not available, using dummy data")
+  }
+} else {
+  // Edge Runtime - use dummy data only
+  console.log("🌐 Edge Runtime detected - using dummy data")
+}
+
+// Types
 export interface Movie {
   _id: string
   title: string
-  year: number
-  rated: string
-  released: string
-  runtime: string
-  genre: string[]
-  director: string
-  writer: string
-  actors: string
   plot: string
-  language: string
-  country: string
-  awards: string
+  fullplot?: string
+  genres: string[]
+  runtime: number
+  cast: string[]
   poster: string
-  ratings: Array<{
-    Source: string
-    Value: string
-  }>
-  metascore: string
-  imdbRating: string
-  imdbVotes: string
-  imdbID: string
-  type: string
-  dvd?: string
-  boxOffice?: string
-  production?: string
-  website?: string
-}
-
-export interface User {
-  _id: string
-  name: string
-  email: string
-  password: string
-  createdAt: Date
+  year: number
+  rated?: string
+  imdb: {
+    rating: number
+    votes: number
+    id: number
+  }
+  countries: string[]
+  languages: string[]
+  directors: string[]
+  num_mflix_comments: number
+  released?: Date
+  awards?: {
+    wins: number
+    nominations: number
+    text: string
+  }
+  tomatoes?: {
+    viewer?: {
+      rating: number
+      numReviews: number
+      meter?: number
+    }
+    critic?: {
+      rating: number
+      numReviews: number
+      meter: number
+    }
+    fresh?: number
+    rotten?: number
+    lastUpdated?: Date
+  }
 }
 
 export interface Comment {
@@ -48,507 +89,864 @@ export interface Comment {
   date: Date
 }
 
+export interface Theater {
+  _id: string
+  theaterId: number
+  location: {
+    address: {
+      street1: string
+      city: string
+      state: string
+      zipcode: string
+    }
+    geo: {
+      type: string
+      coordinates: [number, number]
+    }
+  }
+}
+
+export interface User {
+  _id: string
+  name: string
+  email: string
+  password: string
+}
+
 export interface WatchlistItem {
   _id: string
-  userId: string
-  movieId: string
-  addedAt: Date
+  user_id: string
+  movie_id: string
+  added_date: Date
+  status: "want_to_watch" | "watching" | "watched"
+  rating?: number
+  notes?: string
 }
 
-// Check if we're in Edge Runtime or if MongoDB is available
-function isEdgeRuntime() {
-  return (
-    process.env.VERCEL_ENV === "production" ||
-    process.env.CF_PAGES === "1" ||
-    typeof window !== "undefined" ||
-    !process.env.MONGODB_URI
-  )
+export interface MovieWithWatchlist extends Movie {
+  isInWatchlist?: boolean
+  watchlistStatus?: "want_to_watch" | "watching" | "watched"
+  userRating?: number
 }
 
-// Lazy load MongoDB only when needed and available
-let MongoClient: any = null
-let ObjectId: any = null
+// MongoDB document types
+interface MongoMovie {
+  _id: ObjectId
+  title: string
+  plot: string
+  fullplot?: string
+  genres: string[]
+  runtime: number
+  cast: string[]
+  poster: string
+  year: number
+  rated?: string
+  imdb: {
+    rating: number
+    votes: number
+    id: number
+  }
+  countries: string[]
+  languages: string[]
+  directors: string[]
+  num_mflix_comments: number
+  released?: Date
+  awards?: {
+    wins: number
+    nominations: number
+    text: string
+  }
+  tomatoes?: {
+    viewer?: {
+      rating: number
+      numReviews: number
+      meter?: number
+    }
+    critic?: {
+      rating: number
+      numReviews: number
+      meter: number
+    }
+    fresh?: number
+    rotten?: number
+    lastUpdated?: Date
+  }
+}
 
-async function getMongoClient() {
-  if (isEdgeRuntime()) {
-    console.log("🌐 Edge Runtime detected - using dummy data")
-    return null
+interface MongoComment {
+  _id: ObjectId
+  name: string
+  email: string
+  movie_id: ObjectId
+  text: string
+  date: Date
+}
+
+interface MongoUser {
+  _id: ObjectId
+  name: string
+  email: string
+  password: string
+}
+
+interface MongoWatchlistItem {
+  _id: ObjectId
+  user_id: ObjectId
+  movie_id: ObjectId
+  added_date: Date
+  status: "want_to_watch" | "watching" | "watched"
+  rating?: number
+  notes?: string
+}
+
+// Helper functions
+async function isMongoAvailable(): Promise<boolean> {
+  if (!isEdgeRuntime) {
+    return false
+  }
+
+  if (!process.env.MONGODB_URI || !getDatabase) {
+    return false
   }
 
   try {
-    if (!MongoClient) {
-      const mongodb = require("mongodb")
-      MongoClient = mongodb.MongoClient
-      ObjectId = mongodb.ObjectId
-    }
-    return MongoClient
+    const db = await getDatabase()
+    return !!db
   } catch (error) {
-    console.log("⚠️ MongoDB not available - using dummy data")
-    return null
+    return false
   }
 }
 
+function limitMovieData(movie: Movie, isAuthenticated: boolean): Movie {
+  if (isAuthenticated) {
+    return movie
+  }
+
+  return {
+    ...movie,
+    plot: movie.plot.substring(0, 100) + "...",
+    fullplot: undefined,
+    cast: movie.cast.slice(0, 2),
+    directors: movie.directors.slice(0, 1),
+  }
+}
+
+// Database service
 export class DatabaseService {
-  private static client: any = null
-  private static db: any = null
+  static async getMovies(
+    limit = 20,
+    skip = 0,
+    isAuthenticated = false,
+    userId?: string,
+  ): Promise<MovieWithWatchlist[]> {
+    try {
+      const mongoAvailable = await isMongoAvailable()
 
-  private static async connect() {
-    if (isEdgeRuntime()) {
-      return null
-    }
-
-    const Client = await getMongoClient()
-    if (!Client) {
-      return null
-    }
-
-    if (!this.client) {
-      try {
-        this.client = new Client(process.env.MONGODB_URI)
-        await this.client.connect()
-        this.db = this.client.db(process.env.MONGODB_DB_NAME || "movieflix")
-        console.log("✅ Connected to MongoDB")
-      } catch (error) {
-        console.error("❌ MongoDB connection failed:", error)
-        this.client = null
-        this.db = null
+      if (!mongoAvailable) {
+        console.log("🎭 Using dummy data for movies")
+        const movies = dummyMovies.slice(skip, skip + limit)
+        return movies.map((movie: Movie) => limitMovieData(movie, isAuthenticated))
       }
+
+      const db = await getDatabase()
+      if (!db) {
+        const movies = dummyMovies.slice(skip, skip + limit)
+        return movies.map((movie: Movie) => limitMovieData(movie, isAuthenticated))
+      }
+
+      const actualLimit = isAuthenticated ? limit : Math.min(limit, 6)
+      const movies = await db.collection<MongoMovie>("movies").find({}).skip(skip).limit(actualLimit).toArray()
+
+      const moviesWithWatchlist = await Promise.all(
+        movies.map(async (movie: MongoMovie): Promise<MovieWithWatchlist> => {
+          const baseMovie = limitMovieData(
+            {
+              ...movie,
+              _id: movie._id.toString(),
+            },
+            isAuthenticated,
+          )
+
+          if (isAuthenticated && userId) {
+            const watchlistItem = await this.getWatchlistItem(userId, movie._id.toString())
+            return {
+              ...baseMovie,
+              isInWatchlist: !!watchlistItem,
+              watchlistStatus: watchlistItem?.status,
+              userRating: watchlistItem?.rating,
+            }
+          }
+
+          return baseMovie
+        }),
+      )
+
+      return moviesWithWatchlist
+    } catch (error) {
+      console.error("❌ Error fetching movies:", error)
+      const movies = dummyMovies.slice(skip, skip + limit)
+      return movies.map((movie: Movie) => limitMovieData(movie, isAuthenticated))
     }
-    return this.db
   }
 
-  // Movies
-  static async getMovies(page = 1, limit = 20, search?: string, genre?: string) {
-    const db = await this.connect()
-    if (!db) {
-      // Fallback to dummy data
-      let filteredMovies = [...dummyMovies]
+  static async getMovieById(id: string, isAuthenticated = false, userId?: string): Promise<MovieWithWatchlist | null> {
+    try {
+      const mongoAvailable = await isMongoAvailable()
 
-      if (search) {
-        filteredMovies = filteredMovies.filter(
-          (movie) =>
-            movie.title.toLowerCase().includes(search.toLowerCase()) ||
-            movie.plot.toLowerCase().includes(search.toLowerCase()),
-        )
+      if (!mongoAvailable) {
+        const movie = dummyMovies.find((movie: Movie) => movie._id === id) || null
+        return movie ? limitMovieData(movie, isAuthenticated) : null
       }
 
-      if (genre && genre !== "all") {
-        filteredMovies = filteredMovies.filter((movie) =>
-          movie.genre.some((g) => g.toLowerCase() === genre.toLowerCase()),
-        )
+      const db = await getDatabase()
+      if (!db) {
+        const movie = dummyMovies.find((movie: Movie) => movie._id === id) || null
+        return movie ? limitMovieData(movie, isAuthenticated) : null
       }
 
-      const startIndex = (page - 1) * limit
-      const endIndex = startIndex + limit
-      const paginatedMovies = filteredMovies.slice(startIndex, endIndex)
+      const movie = await db.collection<MongoMovie>("movies").findOne({ _id: new ObjectId(id) })
+      if (!movie) return null
 
-      return {
-        movies: paginatedMovies,
-        totalCount: filteredMovies.length,
-        totalPages: Math.ceil(filteredMovies.length / limit),
-        currentPage: page,
+      const baseMovie = limitMovieData(
+        {
+          ...movie,
+          _id: movie._id.toString(),
+        },
+        isAuthenticated,
+      )
+
+      if (isAuthenticated && userId) {
+        const watchlistItem = await this.getWatchlistItem(userId, id)
+        return {
+          ...baseMovie,
+          isInWatchlist: !!watchlistItem,
+          watchlistStatus: watchlistItem?.status,
+          userRating: watchlistItem?.rating,
+        }
       }
+
+      return baseMovie
+    } catch (error) {
+      console.error("❌ Error fetching movie:", error)
+      const movie = dummyMovies.find((movie: Movie) => movie._id === id) || null
+      return movie ? limitMovieData(movie, isAuthenticated) : null
     }
+  }
+
+  static async searchMovies(query: string, isAuthenticated = false, userId?: string): Promise<MovieWithWatchlist[]> {
+    if (!isAuthenticated) return []
 
     try {
-      const collection = db.collection("movies")
-      const query: any = {}
+      const mongoAvailable = await isMongoAvailable()
 
-      if (search) {
-        query.$or = [
-          { title: { $regex: search, $options: "i" } },
-          { plot: { $regex: search, $options: "i" } },
-          { actors: { $regex: search, $options: "i" } },
-          { director: { $regex: search, $options: "i" } },
-        ]
-      }
-
-      if (genre && genre !== "all") {
-        query.genre = { $in: [new RegExp(genre, "i")] }
-      }
-
-      const totalCount = await collection.countDocuments(query)
-      const movies = await collection
-        .find(query)
-        .skip((page - 1) * limit)
-        .limit(limit)
-        .toArray()
-
-      return {
-        movies,
-        totalCount,
-        totalPages: Math.ceil(totalCount / limit),
-        currentPage: page,
-      }
-    } catch (error) {
-      console.error("Error fetching movies:", error)
-      throw error
-    }
-  }
-
-  static async getMovieById(id: string) {
-    const db = await this.connect()
-    if (!db) {
-      return dummyMovies.find((movie) => movie._id === id) || null
-    }
-
-    try {
-      const collection = db.collection("movies")
-      return await collection.findOne({ _id: id })
-    } catch (error) {
-      console.error("Error fetching movie:", error)
-      return null
-    }
-  }
-
-  static async getMoviesByGenre(genre: string, limit = 10) {
-    const db = await this.connect()
-    if (!db) {
-      return dummyMovies
-        .filter((movie) => movie.genre.some((g) => g.toLowerCase() === genre.toLowerCase()))
-        .slice(0, limit)
-    }
-
-    try {
-      const collection = db.collection("movies")
-      return await collection
-        .find({ genre: { $in: [new RegExp(genre, "i")] } })
-        .limit(limit)
-        .toArray()
-    } catch (error) {
-      console.error("Error fetching movies by genre:", error)
-      return []
-    }
-  }
-
-  static async getFeaturedMovies(limit = 6) {
-    const db = await this.connect()
-    if (!db) {
-      return dummyMovies.filter((movie) => Number.parseFloat(movie.imdbRating) >= 8.0).slice(0, limit)
-    }
-
-    try {
-      const collection = db.collection("movies")
-      return await collection
-        .find({ imdbRating: { $gte: "8.0" } })
-        .limit(limit)
-        .toArray()
-    } catch (error) {
-      console.error("Error fetching featured movies:", error)
-      return []
-    }
-  }
-
-  static async getPopularMovies(limit = 10) {
-    const db = await this.connect()
-    if (!db) {
-      return dummyMovies
-        .sort((a, b) => Number.parseFloat(b.imdbRating) - Number.parseFloat(a.imdbRating))
-        .slice(0, limit)
-    }
-
-    try {
-      const collection = db.collection("movies")
-      return await collection.find({}).sort({ imdbRating: -1 }).limit(limit).toArray()
-    } catch (error) {
-      console.error("Error fetching popular movies:", error)
-      return []
-    }
-  }
-
-  static async getRecentMovies(limit = 10) {
-    const db = await this.connect()
-    if (!db) {
-      return dummyMovies.sort((a, b) => Number.parseInt(b.year) - Number.parseInt(a.year)).slice(0, limit)
-    }
-
-    try {
-      const collection = db.collection("movies")
-      return await collection.find({}).sort({ year: -1 }).limit(limit).toArray()
-    } catch (error) {
-      console.error("Error fetching recent movies:", error)
-      return []
-    }
-  }
-
-  static async searchMovies(query: string, limit = 20) {
-    const db = await this.connect()
-    if (!db) {
-      return dummyMovies
-        .filter(
-          (movie) =>
+      if (!mongoAvailable) {
+        return dummyMovies.filter(
+          (movie: Movie) =>
             movie.title.toLowerCase().includes(query.toLowerCase()) ||
-            movie.plot.toLowerCase().includes(query.toLowerCase()) ||
-            movie.actors.toLowerCase().includes(query.toLowerCase()) ||
-            movie.director.toLowerCase().includes(query.toLowerCase()),
+            movie.plot.toLowerCase().includes(query.toLowerCase()),
         )
-        .slice(0, limit)
-    }
+      }
 
-    try {
-      const collection = db.collection("movies")
-      return await collection
+      const db = await getDatabase()
+      if (!db) {
+        return dummyMovies.filter(
+          (movie: Movie) =>
+            movie.title.toLowerCase().includes(query.toLowerCase()) ||
+            movie.plot.toLowerCase().includes(query.toLowerCase()),
+        )
+      }
+
+      const movies = await db
+        .collection<MongoMovie>("movies")
         .find({
           $or: [
             { title: { $regex: query, $options: "i" } },
             { plot: { $regex: query, $options: "i" } },
-            { actors: { $regex: query, $options: "i" } },
-            { director: { $regex: query, $options: "i" } },
+            { fullplot: { $regex: query, $options: "i" } },
+            { cast: { $in: [new RegExp(query, "i")] } },
+            { directors: { $in: [new RegExp(query, "i")] } },
           ],
         })
+        .limit(20)
+        .toArray()
+
+      const moviesWithWatchlist = await Promise.all(
+        movies.map(async (movie: MongoMovie): Promise<MovieWithWatchlist> => {
+          const baseMovie = {
+            ...movie,
+            _id: movie._id.toString(),
+          }
+
+          if (userId) {
+            const watchlistItem = await this.getWatchlistItem(userId, movie._id.toString())
+            return {
+              ...baseMovie,
+              isInWatchlist: !!watchlistItem,
+              watchlistStatus: watchlistItem?.status,
+              userRating: watchlistItem?.rating,
+            }
+          }
+
+          return baseMovie
+        }),
+      )
+
+      return moviesWithWatchlist
+    } catch (error) {
+      console.error("❌ Error searching movies:", error)
+      return dummyMovies.filter(
+        (movie: Movie) =>
+          movie.title.toLowerCase().includes(query.toLowerCase()) ||
+          movie.plot.toLowerCase().includes(query.toLowerCase()),
+      )
+    }
+  }
+
+  static async getMoviesByGenre(
+    genre: string,
+    isAuthenticated = false,
+    userId?: string,
+  ): Promise<MovieWithWatchlist[]> {
+    try {
+      const mongoAvailable = await isMongoAvailable()
+
+      if (!mongoAvailable) {
+        const movies = dummyMovies.filter((movie: Movie) => movie.genres.includes(genre))
+        return movies.map((movie: Movie) => limitMovieData(movie, isAuthenticated))
+      }
+
+      const db = await getDatabase()
+      if (!db) {
+        const movies = dummyMovies.filter((movie: Movie) => movie.genres.includes(genre))
+        return movies.map((movie: Movie) => limitMovieData(movie, isAuthenticated))
+      }
+
+      const limit = isAuthenticated ? 10 : 4
+      const movies = await db
+        .collection<MongoMovie>("movies")
+        .find({ genres: { $in: [genre] } })
         .limit(limit)
         .toArray()
+
+      const moviesWithWatchlist = await Promise.all(
+        movies.map(async (movie: MongoMovie): Promise<MovieWithWatchlist> => {
+          const baseMovie = limitMovieData(
+            {
+              ...movie,
+              _id: movie._id.toString(),
+            },
+            isAuthenticated,
+          )
+
+          if (isAuthenticated && userId) {
+            const watchlistItem = await this.getWatchlistItem(userId, movie._id.toString())
+            return {
+              ...baseMovie,
+              isInWatchlist: !!watchlistItem,
+              watchlistStatus: watchlistItem?.status,
+              userRating: watchlistItem?.rating,
+            }
+          }
+
+          return baseMovie
+        }),
+      )
+
+      return moviesWithWatchlist
     } catch (error) {
-      console.error("Error searching movies:", error)
-      return []
+      console.error("❌ Error fetching genre movies:", error)
+      const movies = dummyMovies.filter((movie: Movie) => movie.genres.includes(genre))
+      return movies.map((movie: Movie) => limitMovieData(movie, isAuthenticated))
     }
   }
 
-  // Users
-  static async createUser(userData: Omit<User, "_id" | "createdAt">) {
-    const db = await this.connect()
-    if (!db) {
-      const newUser: User = {
-        _id: `user_${Date.now()}`,
-        ...userData,
-        createdAt: new Date(),
+  // Continue with other methods...
+  static async getCommentsByMovieId(movieId: string, isAuthenticated = false): Promise<Comment[]> {
+    if (!isAuthenticated) return []
+
+    try {
+      const mongoAvailable = await isMongoAvailable()
+
+      if (!mongoAvailable) {
+        return dummyComments.filter((comment: Comment) => comment.movie_id === movieId)
       }
-      return newUser
-    }
 
-    try {
-      const collection = db.collection("users")
-      const newUser = {
-        ...userData,
-        createdAt: new Date(),
+      const db = await getDatabase()
+      if (!db) {
+        return dummyComments.filter((comment: Comment) => comment.movie_id === movieId)
       }
-      const result = await collection.insertOne(newUser)
-      return { _id: result.insertedId, ...newUser }
+
+      const comments = await db
+        .collection<MongoComment>("comments")
+        .find({ movie_id: new ObjectId(movieId) })
+        .sort({ date: -1 })
+        .toArray()
+
+      return comments.map(
+        (comment: MongoComment): Comment => ({
+          ...comment,
+          _id: comment._id.toString(),
+          movie_id: comment.movie_id.toString(),
+        }),
+      )
     } catch (error) {
-      console.error("Error creating user:", error)
-      throw error
+      console.error("❌ Error fetching comments:", error)
+      return dummyComments.filter((comment: Comment) => comment.movie_id === movieId)
     }
   }
 
-  static async getUserByEmail(email: string) {
-    const db = await this.connect()
-    if (!db) {
-      return dummyUsers.find((user) => user.email === email) || null
-    }
-
+  static async addComment(comment: Omit<Comment, "_id">): Promise<Comment> {
     try {
-      const collection = db.collection("users")
-      return await collection.findOne({ email })
+      const mongoAvailable = await isMongoAvailable()
+
+      if (!mongoAvailable) {
+        const newComment: Comment = {
+          ...comment,
+          _id: Date.now().toString(),
+          date: new Date(),
+        }
+        dummyComments.push(newComment)
+        return newComment
+      }
+
+      const db = await getDatabase()
+      if (!db) {
+        const newComment: Comment = {
+          ...comment,
+          _id: Date.now().toString(),
+          date: new Date(),
+        }
+        dummyComments.push(newComment)
+        return newComment
+      }
+
+      const result = await db.collection<Omit<MongoComment, "_id">>("comments").insertOne({
+        name: comment.name,
+        email: comment.email,
+        movie_id: new ObjectId(comment.movie_id),
+        text: comment.text,
+        date: new Date(),
+      })
+
+      return {
+        ...comment,
+        _id: result.insertedId.toString(),
+        date: new Date(),
+      }
     } catch (error) {
-      console.error("Error fetching user by email:", error)
-      return null
-    }
-  }
-
-  static async getUserById(id: string) {
-    const db = await this.connect()
-    if (!db) {
-      return dummyUsers.find((user) => user._id === id) || null
-    }
-
-    try {
-      const collection = db.collection("users")
-      const query = ObjectId && ObjectId.isValid(id) ? { _id: new ObjectId(id) } : { _id: id }
-      return await collection.findOne(query)
-    } catch (error) {
-      console.error("Error fetching user by ID:", error)
-      return null
-    }
-  }
-
-  // Comments
-  static async addComment(commentData: Omit<Comment, "_id">) {
-    const db = await this.connect()
-    if (!db) {
+      console.error("❌ Error adding comment:", error)
       const newComment: Comment = {
-        _id: `comment_${Date.now()}`,
-        ...commentData,
+        ...comment,
+        _id: Date.now().toString(),
+        date: new Date(),
       }
+      dummyComments.push(newComment)
       return newComment
     }
+  }
 
+  static async getUserByEmail(email: string): Promise<User | null> {
     try {
-      const collection = db.collection("comments")
-      const result = await collection.insertOne(commentData)
-      return { _id: result.insertedId, ...commentData }
+      const mongoAvailable = await isMongoAvailable()
+
+      if (!mongoAvailable) {
+        return dummyUsers.find((user: User) => user.email === email) || null
+      }
+
+      const db = await getDatabase()
+      if (!db) return dummyUsers.find((user: User) => user.email === email) || null
+
+      const user = await db.collection<MongoUser>("users").findOne({ email })
+      if (!user) return null
+
+      return {
+        ...user,
+        _id: user._id.toString(),
+      }
     } catch (error) {
-      console.error("Error adding comment:", error)
-      throw error
+      console.error("Error fetching user:", error)
+      return dummyUsers.find((user: User) => user.email === email) || null
     }
   }
 
-  static async getCommentsByMovieId(movieId: string) {
-    const db = await this.connect()
-    if (!db) {
-      return dummyComments.filter((comment) => comment.movie_id === movieId)
-    }
-
+  static async createUser(userData: Omit<User, "_id">): Promise<User> {
     try {
-      const collection = db.collection("comments")
-      return await collection.find({ movie_id: movieId }).sort({ date: -1 }).toArray()
+      const mongoAvailable = await isMongoAvailable()
+
+      if (!mongoAvailable) {
+        const newUser: User = {
+          ...userData,
+          _id: Date.now().toString(),
+        }
+        dummyUsers.push(newUser)
+        return newUser
+      }
+
+      const db = await getDatabase()
+      if (!db) {
+        const newUser: User = {
+          ...userData,
+          _id: Date.now().toString(),
+        }
+        dummyUsers.push(newUser)
+        return newUser
+      }
+
+      const result = await db.collection<Omit<MongoUser, "_id">>("users").insertOne({
+        name: userData.name,
+        email: userData.email,
+        password: userData.password,
+      })
+
+      return {
+        ...userData,
+        _id: result.insertedId.toString(),
+      }
     } catch (error) {
-      console.error("Error fetching comments:", error)
-      return []
+      console.error("Error creating user:", error)
+      throw new Error("Failed to create user")
     }
   }
 
-  // Watchlist
-  static async addToWatchlist(userId: string, movieId: string) {
-    const db = await this.connect()
-    if (!db) {
-      const existingItem = dummyWatchlist.find((item) => item.userId === userId && item.movieId === movieId)
+  // Watchlist methods
+  static async addToWatchlist(
+    userId: string,
+    movieId: string,
+    status: "want_to_watch" | "watching" | "watched" = "want_to_watch",
+  ): Promise<WatchlistItem> {
+    try {
+      const mongoAvailable = await isMongoAvailable()
+
+      if (!mongoAvailable) {
+        return {
+          _id: Date.now().toString(),
+          user_id: userId,
+          movie_id: movieId,
+          added_date: new Date(),
+          status,
+        }
+      }
+
+      const db = await getDatabase()
+      if (!db) {
+        throw new Error("Database connection failed")
+      }
+
+      const existingItem = await db.collection<MongoWatchlistItem>("watchlist").findOne({
+        user_id: new ObjectId(userId),
+        movie_id: new ObjectId(movieId),
+      })
 
       if (existingItem) {
-        throw new Error("Movie already in watchlist")
+        await db.collection("watchlist").updateOne(
+          { _id: existingItem._id },
+          {
+            $set: {
+              status,
+              added_date: new Date(),
+            },
+          },
+        )
+
+        return {
+          _id: existingItem._id.toString(),
+          user_id: userId,
+          movie_id: movieId,
+          added_date: new Date(),
+          status,
+          rating: existingItem.rating,
+          notes: existingItem.notes,
+        }
+      } else {
+        const result = await db.collection<Omit<MongoWatchlistItem, "_id">>("watchlist").insertOne({
+          user_id: new ObjectId(userId),
+          movie_id: new ObjectId(movieId),
+          added_date: new Date(),
+          status,
+        })
+
+        return {
+          _id: result.insertedId.toString(),
+          user_id: userId,
+          movie_id: movieId,
+          added_date: new Date(),
+          status,
+        }
       }
-
-      const newItem: WatchlistItem = {
-        _id: `watchlist_${Date.now()}`,
-        userId,
-        movieId,
-        addedAt: new Date(),
-      }
-
-      return newItem
-    }
-
-    try {
-      const collection = db.collection("watchlist")
-
-      // Check if already exists
-      const existing = await collection.findOne({ userId, movieId })
-      if (existing) {
-        throw new Error("Movie already in watchlist")
-      }
-
-      const watchlistItem = {
-        userId,
-        movieId,
-        addedAt: new Date(),
-      }
-
-      const result = await collection.insertOne(watchlistItem)
-      return { _id: result.insertedId, ...watchlistItem }
     } catch (error) {
-      console.error("Error adding to watchlist:", error)
-      throw error
+      console.error("❌ Error adding to watchlist:", error)
+      throw new Error("Failed to add to watchlist")
     }
   }
 
-  static async removeFromWatchlist(userId: string, movieId: string) {
-    const db = await this.connect()
-    if (!db) {
-      return { success: true }
-    }
-
+  static async removeFromWatchlist(userId: string, movieId: string): Promise<boolean> {
     try {
-      const collection = db.collection("watchlist")
-      await collection.deleteOne({ userId, movieId })
-      return { success: true }
+      const mongoAvailable = await isMongoAvailable()
+
+      if (!mongoAvailable) {
+        return true
+      }
+
+      const db = await getDatabase()
+      if (!db) {
+        throw new Error("Database connection failed")
+      }
+
+      const result = await db.collection("watchlist").deleteOne({
+        user_id: new ObjectId(userId),
+        movie_id: new ObjectId(movieId),
+      })
+
+      return result.deletedCount > 0
     } catch (error) {
-      console.error("Error removing from watchlist:", error)
-      throw error
+      console.error("❌ Error removing from watchlist:", error)
+      throw new Error("Failed to remove from watchlist")
     }
   }
 
-  static async getWatchlist(userId: string) {
-    const db = await this.connect()
-    if (!db) {
-      const watchlistItems = dummyWatchlist.filter((item) => item.userId === userId)
-      const movies = watchlistItems
-        .map((item) => dummyMovies.find((movie) => movie._id === item.movieId))
-        .filter(Boolean)
-
-      return movies
-    }
-
+  static async getWatchlistItem(userId: string, movieId: string): Promise<WatchlistItem | null> {
     try {
-      const watchlistCollection = db.collection("watchlist")
-      const moviesCollection = db.collection("movies")
+      const mongoAvailable = await isMongoAvailable()
 
-      const watchlistItems = await watchlistCollection.find({ userId }).toArray()
+      if (!mongoAvailable) {
+        return null
+      }
 
-      const movieIds = watchlistItems.map((item) => item.movieId)
-      const movies = await moviesCollection.find({ _id: { $in: movieIds } }).toArray()
+      const db = await getDatabase()
+      if (!db) return null
 
-      return movies
+      const item = await db.collection<MongoWatchlistItem>("watchlist").findOne({
+        user_id: new ObjectId(userId),
+        movie_id: new ObjectId(movieId),
+      })
+
+      if (!item) return null
+
+      return {
+        _id: item._id.toString(),
+        user_id: item.user_id.toString(),
+        movie_id: item.movie_id.toString(),
+        added_date: item.added_date,
+        status: item.status,
+        rating: item.rating,
+        notes: item.notes,
+      }
     } catch (error) {
-      console.error("Error fetching watchlist:", error)
+      console.error("❌ Error fetching watchlist item:", error)
+      return null
+    }
+  }
+
+  static async getUserWatchlist(
+    userId: string,
+    status?: "want_to_watch" | "watching" | "watched",
+  ): Promise<MovieWithWatchlist[]> {
+    try {
+      const mongoAvailable = await isMongoAvailable()
+
+      if (!mongoAvailable) {
+        return dummyMovies.slice(0, 3).map((movie: Movie) => ({
+          ...movie,
+          isInWatchlist: true,
+          watchlistStatus: status || "want_to_watch",
+        }))
+      }
+
+      const db = await getDatabase()
+      if (!db) return []
+
+      const query: any = { user_id: new ObjectId(userId) }
+      if (status) {
+        query.status = status
+      }
+
+      const watchlistItems = await db
+        .collection<MongoWatchlistItem>("watchlist")
+        .find(query)
+        .sort({ added_date: -1 })
+        .toArray()
+
+      const moviesWithWatchlist = await Promise.all(
+        watchlistItems.map(async (item: MongoWatchlistItem): Promise<MovieWithWatchlist | null> => {
+          const movie = await db.collection<MongoMovie>("movies").findOne({ _id: item.movie_id })
+
+          if (!movie) return null
+
+          return {
+            ...movie,
+            _id: movie._id.toString(),
+            isInWatchlist: true,
+            watchlistStatus: item.status,
+            userRating: item.rating,
+          }
+        }),
+      )
+
+      return moviesWithWatchlist.filter((movie): movie is MovieWithWatchlist => movie !== null)
+    } catch (error) {
+      console.error("❌ Error fetching user watchlist:", error)
       return []
     }
   }
 
-  static async isInWatchlist(userId: string, movieId: string) {
-    const db = await this.connect()
-    if (!db) {
-      return dummyWatchlist.some((item) => item.userId === userId && item.movieId === movieId)
-    }
-
+  static async updateWatchlistItem(
+    userId: string,
+    movieId: string,
+    updates: Partial<Pick<WatchlistItem, "status" | "rating" | "notes">>,
+  ): Promise<boolean> {
     try {
-      const collection = db.collection("watchlist")
-      const item = await collection.findOne({ userId, movieId })
-      return !!item
+      const mongoAvailable = await isMongoAvailable()
+
+      if (!mongoAvailable) {
+        return true
+      }
+
+      const db = await getDatabase()
+      if (!db) return false
+
+      const result = await db.collection("watchlist").updateOne(
+        {
+          user_id: new ObjectId(userId),
+          movie_id: new ObjectId(movieId),
+        },
+        { $set: updates },
+      )
+
+      return result.modifiedCount > 0
     } catch (error) {
-      console.error("Error checking watchlist:", error)
+      console.error("❌ Error updating watchlist item:", error)
       return false
     }
   }
 
-  // Database stats
-  static async getDatabaseStats() {
-    const db = await this.connect()
-    if (!db) {
-      return {
-        movies: dummyMovies.length,
-        users: dummyUsers.length,
-        comments: dummyComments.length,
-        watchlistItems: dummyWatchlist.length,
-      }
-    }
-
+  static async getTheaters(): Promise<any[]> {
     try {
-      const [movies, users, comments, watchlistItems] = await Promise.all([
-        db.collection("movies").countDocuments(),
-        db.collection("users").countDocuments(),
-        db.collection("comments").countDocuments(),
-        db.collection("watchlist").countDocuments(),
-      ])
+      const mongoAvailable = await isMongoAvailable()
 
-      return { movies, users, comments, watchlistItems }
+      if (!mongoAvailable) {
+        return dummyTheaters
+      }
+
+      const db = await getDatabase()
+      if (!db) {
+        return dummyTheaters
+      }
+
+      const theaters = await db.collection("theaters").find({}).toArray()
+      return theaters.map((theater: any) => ({
+        _id: theater._id.toString(),
+        theaterId: theater.theaterId,
+        location: theater.location,
+      }))
     } catch (error) {
-      console.error("Error fetching database stats:", error)
-      return { movies: 0, users: 0, comments: 0, watchlistItems: 0 }
+      console.error("❌ Error fetching theaters:", error)
+      return dummyTheaters
     }
   }
 
-  static async createIndexes() {
-    const db = await this.connect()
-    if (!db) {
-      console.log("✅ Indexes created (dummy data)")
-      return { success: true }
-    }
-
+  static async updateMovieCommentCount(movieId: string): Promise<void> {
     try {
-      await Promise.all([
-        db.collection("movies").createIndex({ title: "text", plot: "text", actors: "text" }),
-        db.collection("movies").createIndex({ genre: 1 }),
-        db.collection("movies").createIndex({ imdbRating: -1 }),
-        db.collection("movies").createIndex({ year: -1 }),
-        db.collection("users").createIndex({ email: 1 }, { unique: true }),
-        db.collection("comments").createIndex({ movie_id: 1 }),
-        db.collection("watchlist").createIndex({ userId: 1, movieId: 1 }, { unique: true }),
-      ])
+      const mongoAvailable = await isMongoAvailable()
 
-      console.log("✅ Database indexes created")
-      return { success: true }
+      if (!mongoAvailable) {
+        return
+      }
+
+      const db = await getDatabase()
+      if (!db) return
+
+      const commentCount = await db.collection("comments").countDocuments({ movie_id: new ObjectId(movieId) })
+
+      await db
+        .collection("movies")
+        .updateOne({ _id: new ObjectId(movieId) }, { $set: { num_mflix_comments: commentCount } })
     } catch (error) {
-      console.error("Error creating indexes:", error)
-      throw error
+      console.error("Error updating comment count:", error)
+    }
+  }
+
+  static async createIndexes(): Promise<void> {
+    try {
+      const mongoAvailable = await isMongoAvailable()
+      if (!mongoAvailable) {
+        return
+      }
+
+      const db = await getDatabase()
+      if (!db) {
+        return
+      }
+
+      await db.collection("movies").createIndex({ title: "text", plot: "text", fullplot: "text" })
+      await db.collection("movies").createIndex({ genres: 1 })
+      await db.collection("movies").createIndex({ year: 1 })
+      await db.collection("movies").createIndex({ "imdb.rating": -1 })
+      await db.collection("movies").createIndex({ released: -1 })
+
+      await db.collection("comments").createIndex({ movie_id: 1 })
+      await db.collection("comments").createIndex({ date: -1 })
+
+      await db.collection("users").createIndex({ email: 1 }, { unique: true })
+
+      await db.collection("theaters").createIndex({ "location.geo": "2dsphere" })
+
+      await db.collection("watchlist").createIndex({ user_id: 1 })
+      await db.collection("watchlist").createIndex({ movie_id: 1 })
+      await db.collection("watchlist").createIndex({ user_id: 1, movie_id: 1 }, { unique: true })
+      await db.collection("watchlist").createIndex({ user_id: 1, status: 1 })
+      await db.collection("watchlist").createIndex({ added_date: -1 })
+
+      console.log("✅ All indexes created/updated successfully")
+    } catch (error) {
+      console.error("❌ Error creating indexes:", error)
+    }
+  }
+
+  static async getCollectionStats(): Promise<any> {
+    try {
+      const mongoAvailable = await isMongoAvailable()
+      if (!mongoAvailable) {
+        return {
+          movies: dummyMovies.length,
+          users: dummyUsers.length,
+          comments: dummyComments.length,
+          theaters: dummyTheaters.length,
+          watchlist: 0,
+        }
+      }
+
+      const db = await getDatabase()
+      if (!db) {
+        return {
+          movies: dummyMovies.length,
+          users: dummyUsers.length,
+          comments: dummyComments.length,
+          theaters: dummyTheaters.length,
+          watchlist: 0,
+        }
+      }
+
+      const collections = ["movies", "users", "comments", "theaters", "watchlist"]
+      const stats: any = {}
+
+      for (const collectionName of collections) {
+        try {
+          const count = await db.collection(collectionName).countDocuments()
+          const indexes = await db.collection(collectionName).indexes()
+          stats[collectionName] = {
+            documentCount: count,
+            indexCount: indexes.length,
+            indexes: indexes.map((idx: any) => ({ name: idx.name, keys: idx.key })),
+          }
+        } catch (error) {
+          stats[collectionName] = { error: (error as Error).message }
+        }
+      }
+
+      return stats
+    } catch (error) {
+      console.error("❌ Error fetching collection stats:", error)
+      return { error: (error as Error).message }
     }
   }
 }

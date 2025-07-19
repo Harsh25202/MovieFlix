@@ -2,6 +2,8 @@ import { DatabaseService } from "@/lib/database"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { MapPin } from "lucide-react"
 
+export const runtime = "nodejs"
+
 export default async function TheatersPage() {
   const theaters = await DatabaseService.getTheaters()
 

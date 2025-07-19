@@ -10,6 +10,8 @@ import { Button } from "@/components/ui/button"
 import Link from "next/link"
 import { Play, Star, Users, Film } from "lucide-react"
 
+export const runtime = "nodejs"
+
 async function UnauthenticatedHome() {
   const movies = await DatabaseService.getMovies(6, 0, false)
   const featuredMovie = movies[0]

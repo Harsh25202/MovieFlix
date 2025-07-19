@@ -5,6 +5,8 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
 
+export const runtime = "nodejs"
+
 export default async function DebugPage() {
   // Test MongoDB connection
   let mongoStatus = "disconnected"

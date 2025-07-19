@@ -17,6 +17,8 @@ interface MoviePageProps {
   }>
 }
 
+export const runtime = "nodejs"
+
 async function UnauthenticatedMovieView({ movie }: { movie: any }) {
   return (
     <div className="min-h-screen bg-black">

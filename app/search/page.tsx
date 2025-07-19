@@ -9,6 +9,8 @@ interface SearchPageProps {
   }>
 }
 
+export const runtime = "nodejs"
+
 async function SearchResults({ query }: { query: string }) {
   if (!query) {
     return (

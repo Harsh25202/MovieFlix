@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button"
 import Link from "next/link"
 import { Film, Lock } from "lucide-react"
 
+export const runtime = "nodejs"
+
 async function UnauthenticatedMoviesPage() {
   return (
     <div className="min-h-screen bg-black">

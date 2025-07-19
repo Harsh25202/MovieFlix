@@ -2,8 +2,6 @@ import { type NextRequest, NextResponse } from "next/server"
 import { DatabaseService } from "@/lib/database"
 import { getServerUser } from "@/lib/auth-server"
 
-export const runtime = "edge"
-
 export async function GET(request: NextRequest) {
   try {
     const user = await getServerUser()
